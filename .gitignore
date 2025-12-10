@@ -1,0 +1,18 @@
+# Build
+*.o
+*.out
+*.exe
+*.a
+*.so
+build/
+dist/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Etc
+*.tmp
