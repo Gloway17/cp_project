@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include "../server/crypto_sha.h"
+#include "crypto_sha.h"
 
 typedef struct {
     char id[32];
