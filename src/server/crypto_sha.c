@@ -1,27 +1,30 @@
-#include <openssl/sha.h>
+#include <openssl/evp.h>
 #include <stdio.h>
 #include <string.h>
 #include "crypto_sha.h"
 
-void sha256(const unsigned char *data, int len, unsigned char *out)
-{
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, data, len);
-    SHA256_Final(out, &ctx);
-}
-
 void sha256_hex(const char *input, char *output)
 {
     unsigned char hash[32];
-    SHA256_CTX ctx;
+    unsigned int hash_len = 0;
 
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, input, strlen(input));
-    SHA256_Final(hash, &ctx);
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    if (!ctx) return;
 
-    for (int i = 0; i < 32; i++)
+    // SHA-256 초기화
+    EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
+
+    // 데이터 입력
+    EVP_DigestUpdate(ctx, input, strlen(input));
+
+    // 최종 해시 계산
+    EVP_DigestFinal_ex(ctx, hash, &hash_len);
+
+    EVP_MD_CTX_free(ctx);
+
+    // hex 문자열 변환
+    for (unsigned int i = 0; i < hash_len; i++)
         sprintf(output + (i * 2), "%02x", hash[i]);
 
-    output[64] = 0;
+    output[hash_len * 2] = '\0';   // 문자열 종료
 }

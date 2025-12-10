@@ -1,30 +1,39 @@
-#include <stdio.h>
-#include <string.h>
-#include <openssl/aes.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
 #include "server_log.h"
 
-static unsigned char LOG_KEY[32] = "0123456789ABCDEF0123456789ABCDEF";
-static unsigned char IV[16]      = "0123456789ABCDEF";
-
-void log_encrypted_msg(const unsigned char *msg, int len)
+void encrypt_log_on_exit()
 {
-    FILE *fp = fopen("server_log.enc", "ab");
-    if (!fp) return;
+    FILE *in = fopen("chat_plain.log", "rb");
+    if (!in) return;
 
-    unsigned char enc[1024];
-    AES_KEY aes_key;
-    AES_set_encrypt_key(LOG_KEY, 256, &aes_key);
+    FILE *out = fopen("server_log.enc", "wb");
+    if (!out) { fclose(in); return; }
 
-    int block_cnt = (len + AES_BLOCK_SIZE - 1) / AES_BLOCK_SIZE;
-    int enc_len = block_cnt * AES_BLOCK_SIZE;
+    unsigned char key[32] = "0123456789ABCDEF0123456789ABCDEF";
+    unsigned char iv[16];
 
-    unsigned char padded[1024];
-    memcpy(padded, msg, len);
-    memset(padded + len, AES_BLOCK_SIZE - (len % AES_BLOCK_SIZE),
-           enc_len - len); // PKCS7 padding
+    RAND_bytes(iv, 16);
+    fwrite(iv, 1, 16, out); // 암호문 앞에 IV 저장
 
-    AES_cbc_encrypt(padded, enc, enc_len, &aes_key, IV, AES_ENCRYPT);
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv);
 
-    fwrite(enc, 1, enc_len, fp);
-    fclose(fp);
+    unsigned char inbuf[1024];
+    unsigned char outbuf[1040];
+    int inlen, outlen;
+
+    while ((inlen = fread(inbuf, 1, sizeof(inbuf), in)) > 0) {
+        EVP_EncryptUpdate(ctx, outbuf, &outlen, inbuf, inlen);
+        fwrite(outbuf, 1, outlen, out);
+    }
+
+    EVP_EncryptFinal_ex(ctx, outbuf, &outlen);
+    fwrite(outbuf, 1, outlen, out);
+
+    EVP_CIPHER_CTX_free(ctx);
+    fclose(in);
+    fclose(out);
+
+    remove("chat_plain.log");  // 선택사항
 }

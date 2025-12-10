@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <signal.h>
 
 #include "user_auth.h"
 #include "server_log.h"
@@ -16,6 +17,8 @@
 void *handle_clnt(void *arg);
 void send_msg(char *msg, int len);
 void error_handling(char *msg);
+
+static void handle_exit_signal(int sig);
 
 int clnt_cnt = 0;
 int clnt_socks[MAX_CLNT];
@@ -32,6 +35,8 @@ int main(int argc, char *argv[])
         printf("Usage : %s <port>\n", argv[0]);
         exit(1);
     }
+
+    signal(SIGINT, handle_exit_signal);   // Ctrl+C
 
     pthread_mutex_init(&mutx, NULL);
     serv_sock = socket(PF_INET, SOCK_STREAM, 0);
@@ -122,30 +127,39 @@ void *handle_clnt(void *arg)
 
 void send_msg(char *msg, int len)
 {
+    int i;
     pthread_mutex_lock(&mutx);
 
-    // 1) 타임스탬프 생성
-    time_t now = time(NULL);
-    struct tm *t = localtime(&now);
-
-    char timestamp[32];
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", t);
-
-    // 2) 메시지 재구성: "[timestamp] msg"
-    char formatted_msg[BUF_SIZE + 64];
-    int flen = snprintf(formatted_msg, sizeof(formatted_msg),
-                        "[%s] %.*s", timestamp, len, msg);
-
-    // 3) 암호화 로그 저장
-    log_encrypted_msg((unsigned char *)formatted_msg, flen);
-
-    // 4) 모든 클라이언트에게 timestamp 포함 메시지 전송
-    for (int i = 0; i < clnt_cnt; i++)
-        write(clnt_socks[i], formatted_msg, flen);
+    // 클라이언트에게 그대로 전송
+    for (i = 0; i < clnt_cnt; i++)
+        write(clnt_socks[i], msg, len);
 
     pthread_mutex_unlock(&mutx);
+
+    // 평문 로그 저장
+    FILE *fp = fopen("chat_plain.log", "a");
+    if (!fp) return;
+
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    char timestamp[32];
+
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", t);
+
+    fprintf(fp, "[%s] %.*s", timestamp, len, msg);
+    fclose(fp);
 }
 
+static void handle_exit_signal(int sig)
+{
+    printf("\n[Server] Caught signal %d, encrypting logs...\n", sig);
+
+    encrypt_log_on_exit();
+
+    printf("[Server] Logs encrypted. Shutting down.\n");
+
+    exit(0);
+}
 
 void error_handling(char *msg)
 {
